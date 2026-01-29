@@ -302,7 +302,7 @@ class RFSNConfig(BaseSettings):
 
 
 # Global configuration instance
-_config: Optional[RFSNConfig] = None
+_config: RFSNConfig | None = None
 
 
 def get_config(reload: bool = False) -> RFSNConfig:

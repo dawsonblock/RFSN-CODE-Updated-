@@ -271,7 +271,7 @@ def record_repair_session(
     success: bool,
     duration: float,
     project_type: str = "unknown",
-    failure_reason: Optional[str] = None
+    failure_reason: str | None = None
 ) -> None:
     """Record repair session metrics.
     
@@ -298,7 +298,7 @@ def record_llm_call(
     duration: float,
     prompt_tokens: int,
     completion_tokens: int,
-    error: Optional[str] = None
+    error: str | None = None
 ) -> None:
     """Record LLM API call metrics.
     
@@ -323,7 +323,7 @@ def record_llm_call(
 def record_cache_access(
     tier: str,
     hit: bool,
-    size_bytes: Optional[int] = None
+    size_bytes: int | None = None
 ) -> None:
     """Record cache access metrics.
     

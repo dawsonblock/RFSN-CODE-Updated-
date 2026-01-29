@@ -9,7 +9,7 @@ import threading
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
 
-import requests
+import httpx
 
 # Default dashboard URL
 DASHBOARD_URL = "http://localhost:8000/api/events"
@@ -92,22 +92,23 @@ class ProgressBroadcaster:
 
     def _worker(self) -> None:
         """Background worker to send requests."""
-        while not self._stop_event.is_set():
-            try:
-                event = self._queue.get(timeout=0.5)
+        # Create a persistent httpx client for connection pooling
+        with httpx.Client(timeout=0.2) as client:
+            while not self._stop_event.is_set():
                 try:
-                    requests.post(
-                        DASHBOARD_URL,
-                        json=asdict(event),
-                        timeout=0.2,  # Fast timeout, don't block
-                    )
-                except requests.RequestException:
-                    # Dashboard probably not running, ignore
-                    pass
-                finally:
-                    self._queue.task_done()
-            except queue.Empty:
-                continue
+                    event = self._queue.get(timeout=0.5)
+                    try:
+                        client.post(
+                            DASHBOARD_URL,
+                            json=asdict(event),
+                        )
+                    except (httpx.HTTPError, httpx.TimeoutException):
+                        # Dashboard probably not running, ignore
+                        pass
+                    finally:
+                        self._queue.task_done()
+                except queue.Empty:
+                    continue
 
     def close(self) -> None:
         """Stop the worker."""

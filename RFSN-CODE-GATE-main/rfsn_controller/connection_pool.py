@@ -21,7 +21,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from queue import Queue, Empty
-from typing import Generator, Optional
+from typing import Optional
+from collections.abc import Generator
 import threading
 import atexit
 
@@ -97,7 +98,7 @@ class ConnectionPool:
         return conn
     
     @contextmanager
-    def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+    def get_connection(self) -> Generator[sqlite3.Connection]:
         """Get a connection from the pool.
         
         Yields:
@@ -115,7 +116,7 @@ class ConnectionPool:
         if self._closed:
             raise RuntimeError("Connection pool is closed")
         
-        conn: Optional[sqlite3.Connection] = None
+        conn: sqlite3.Connection | None = None
         try:
             # Get connection from pool
             conn = self.pool.get(timeout=self.timeout)
