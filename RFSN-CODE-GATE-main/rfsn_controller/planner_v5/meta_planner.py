@@ -68,6 +68,7 @@ class MetaPlanner:
         self.planner = ProposalPlanner(self.state_tracker)
         self.planner_state = PlannerState()
         self.max_phase_attempts = max_phase_attempts
+        self.last_feedback: Optional[dict] = None
 
     def next_proposal(
         self,
@@ -99,6 +100,7 @@ class MetaPlanner:
 
         # Update state from feedback
         if controller_feedback:
+            self.last_feedback = controller_feedback
             self._process_feedback(controller_feedback)
 
         # Check if stuck
@@ -410,11 +412,61 @@ class MetaPlanner:
         Returns:
             Best proposal
         """
+        # Extract narrative from feedback if available
+        test_narrative = ""
+        if self.last_feedback:
+            issue_text = self.last_feedback.get("issue_text", "")
+            error_msg = self.last_feedback.get("output", "")
+            test_narrative = self._extract_test_narrative(issue_text or error_msg)
+        
         scorer = ScoringEngine(
             failing_tests=list(self.state_tracker.failing_tests),
             traceback_frames=self.state_tracker.traceback_frames,
-            test_narrative="",  # TODO: extract from issue text
+            test_narrative=test_narrative,
         )
 
         best_proposals = scorer.select_best(candidates, top_n=1)
         return best_proposals[0] if best_proposals else candidates[0]
+    
+    def _extract_test_narrative(self, issue_text: str) -> str:
+        """Extract test narrative from issue or error text.
+        
+        Looks for patterns like \"Expected: X\", \"Should Y\", \"Test fails with: Z\"
+        
+        Args:
+            issue_text: GitHub issue text or error message
+            
+        Returns:
+            Extracted test narrative or empty string
+        """
+        if not issue_text:
+            return ""
+        
+        # Patterns to extract test expectations
+        patterns = [
+            r"Expected:\s*(.+?)(?:\n|$)",
+            r"Should\s+(.+?)(?:\.|$)",
+            r"Test fails with:\s*(.+?)(?:\n|$)",
+            r"Expected\s+behavior:\s*(.+?)(?:\n|$)",
+            r"Error:\s*(.+?)(?:\n|$)",
+            r"AssertionError:\s*(.+?)(?:\n|$)",
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, issue_text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                narrative = match.group(1).strip()
+                # Limit length
+                if len(narrative) > 200:
+                    narrative = narrative[:200] + "..."
+                return narrative
+        
+        # Fallback: take first non-empty line
+        lines = [line.strip() for line in issue_text.split('\n') if line.strip()]
+        if lines:
+            first_line = lines[0]
+            if len(first_line) > 200:
+                first_line = first_line[:200] + "..."
+            return first_line
+        
+        return ""
