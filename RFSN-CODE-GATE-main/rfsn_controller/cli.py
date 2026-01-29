@@ -342,8 +342,8 @@ def main() -> None:
     parser.add_argument(
         "--planner-mode",
         default="off",
-        choices=["off", "v2", "dag"],
-        help="Planner mode: off|v2|dag (dag is legacy; v2 is governed planner)",
+        choices=["off", "v2", "dag", "v5"],
+        help="Planner mode: off|v2|dag|v5 (v5 is latest with meta-planning and state tracking)",
     )
     parser.add_argument(
         "--risk-profile",

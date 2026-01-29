@@ -448,7 +448,7 @@ class ControllerConfig:
     telemetry_port: int = 8080  # Prometheus metrics port
     # Elite Controller options
     policy_mode: str = "off"  # off | bandit
-    planner_mode: str = "off"  # off | dag
+    planner_mode: str = "off"  # off | dag | v2 | v5
     repo_index: bool = False  # Enable repo indexing
     seed: int = 1337  # Deterministic seed
     # Risk & persistence
@@ -682,6 +682,22 @@ def run_controller(cfg: ControllerConfig) -> Dict[str, Any]:
             except ImportError as e:
                 log({"phase": "planner_v2_init", "error": str(e)})
                 planner_v2_enabled = False
+
+        # === PLANNER V5: Meta-planning with state tracking ===
+        planner_v5_adapter = None
+        planner_v5_enabled = cfg.planner_mode == "v5"
+        if planner_v5_enabled:
+            try:
+                from .planner_v5_adapter import PlannerV5Adapter
+                planner_v5_adapter = PlannerV5Adapter(enabled=True)
+                if planner_v5_adapter.enabled:
+                    log({"phase": "planner_v5_init", "mode": cfg.planner_mode, "status": "ready"})
+                else:
+                    log({"phase": "planner_v5_init", "mode": cfg.planner_mode, "status": "unavailable"})
+                    planner_v5_enabled = False
+            except ImportError as e:
+                log({"phase": "planner_v5_init", "error": str(e)})
+                planner_v5_enabled = False
 
         # === ELITE CONTROLLER: Initialize Policy ===
         elite_policy = None
@@ -1294,6 +1310,35 @@ def run_controller(cfg: ControllerConfig) -> Dict[str, Any]:
                 })
             except Exception as e:
                 log({"phase": "planner_v2_goal_start", "error": str(e)})
+
+        # === PLANNER V5: Start planning if enabled ===
+        planner_v5_initial_action = None
+        if planner_v5_enabled and planner_v5_adapter is not None:
+            try:
+                # Build initial feedback for v5
+                initial_feedback = {
+                    "repo_url": cfg.github_url,
+                    "failing_tests": v.failing_tests[:10],
+                    "error_signature": v.sig,
+                    "test_output": (v.stdout or "") + "\n" + (v.stderr or ""),
+                    "tests_passed": 0,
+                    "tests_failed": len(v.failing_tests),
+                    "success": False,
+                }
+                
+                # Get first action from planner v5
+                planner_v5_initial_action = planner_v5_adapter.get_next_action(
+                    controller_feedback=initial_feedback
+                )
+                
+                if planner_v5_initial_action:
+                    log({
+                        "phase": "planner_v5_start",
+                        "action_type": planner_v5_initial_action.action_type,
+                        "mode": "v5_meta_planning",
+                    })
+            except Exception as e:
+                log({"phase": "planner_v5_start", "error": str(e)})
 
         while step_count < max_iterations:
             # Progress reporting
@@ -2220,6 +2265,40 @@ def run_controller(cfg: ControllerConfig) -> Dict[str, Any]:
                             break
                 except Exception as e:
                     log({"phase": "planner_v2_process_outcome", "error": str(e)})
+
+            # === PLANNER V5: Process outcome and get next action ===
+            if planner_v5_enabled and planner_v5_adapter is not None:
+                try:
+                    # Build feedback from this step
+                    v5_feedback = {
+                        "success": v.ok,
+                        "output": (v.stdout or "") + "\n" + (v.stderr or ""),
+                        "tests_passed": len([t for t in v.failing_tests]) if not v.ok else 0,
+                        "tests_failed": len(v.failing_tests),
+                        "traceback": v.stderr if not v.ok else None,
+                    }
+                    
+                    # Get next action from planner v5
+                    next_action = planner_v5_adapter.get_next_action(
+                        controller_feedback=v5_feedback
+                    )
+                    
+                    if next_action:
+                        log({
+                            "phase": "planner_v5_next_action",
+                            "step": step_count,
+                            "action_type": next_action.action_type,
+                            "target": next_action.target_path or next_action.command,
+                        })
+                        # Store for potential use in next iteration
+                        planner_v5_initial_action = next_action
+                    else:
+                        log({
+                            "phase": "planner_v5_no_action",
+                            "step": step_count,
+                        })
+                except Exception as e:
+                    log({"phase": "planner_v5_process_outcome", "error": str(e)})
 
         # === PHASE: FINAL_VERIFY ===
         if current_phase == Phase.FINAL_VERIFY:
