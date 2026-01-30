@@ -3,21 +3,48 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Dict, Any, Tuple
 
 
 @dataclass
 class LocalizationHit:
     """A localized file/span with evidence."""
     
-    file: str
-    span: Tuple[int, int]  # (start_line, end_line)
+    # Core fields (support both old and new naming)
+    file_path: str
+    line_start: int
+    line_end: int
     score: float  # 0.0 to 1.0
-    evidence_type: str  # trace, grep, embed
-    evidence_text: str
-    why: str  # Human-readable explanation
+    evidence: str
+    method: str  # trace, ripgrep, embedding, symbol
     
-    # Metadata
+    # Optional metadata
     snippet: str = ""
     confidence: float = 0.0
-    metadata: dict = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    # Legacy compatibility properties
+    @property
+    def file(self) -> str:
+        """Legacy file field."""
+        return self.file_path
+    
+    @property
+    def span(self) -> Tuple[int, int]:
+        """Legacy span field."""
+        return (self.line_start, self.line_end)
+    
+    @property
+    def evidence_type(self) -> str:
+        """Legacy evidence_type field."""
+        return self.method
+    
+    @property
+    def evidence_text(self) -> str:
+        """Legacy evidence_text field."""
+        return self.evidence
+    
+    @property
+    def why(self) -> str:
+        """Legacy why field."""
+        return self.evidence
