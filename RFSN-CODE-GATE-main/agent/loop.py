@@ -222,7 +222,7 @@ def _advance_phase(
 ) -> AgentState:
     """Advance to next phase based on current phase and execution result.
     
-    This is intentionally simple. The planner can override via state.notes.
+    This is more aggressive about progressing to avoid stuck loops.
     
     Args:
         state: Current state
@@ -233,6 +233,11 @@ def _advance_phase(
     Returns:
         Updated state
     """
+    # Track phase attempts to prevent infinite loops
+    phase_key = f"phase_{state.phase.value}_attempts"
+    attempts = state.notes.get(phase_key, 0) + 1
+    state.notes[phase_key] = attempts
+    
     # Planner can force a specific phase
     if "next_phase" in state.notes:
         forced_phase = state.notes.pop("next_phase")
@@ -240,36 +245,42 @@ def _advance_phase(
         state.phase = Phase(forced_phase)
         return state
     
-    # Default phase progression
+    # Default phase progression (more aggressive)
     if state.phase == Phase.INGEST:
+        # Always move to LOCALIZE after first action
         state.phase = Phase.LOCALIZE
     
     elif state.phase == Phase.LOCALIZE:
-        # Check if we have localization results
-        if state.localization_hits:
+        # Move to PLAN if we have hits OR if we've tried enough times
+        if state.localization_hits or attempts >= 3:
             state.phase = Phase.PLAN
-        else:
-            # Retry localization with different strategy
-            pass
+            logger.info("Moving to PLAN phase", 
+                       hits=len(state.localization_hits), 
+                       attempts=attempts)
     
     elif state.phase == Phase.PLAN:
-        state.phase = Phase.PATCH_CANDIDATES
+        # After planning, move to patch (or if we've inspected enough)
+        if proposal.kind == "edit" or attempts >= 2:
+            state.phase = Phase.PATCH_CANDIDATES
     
     elif state.phase == Phase.PATCH_CANDIDATES:
         if proposal.kind == "edit" and exec_result.status == "ok":
             state.phase = Phase.TEST_STAGE
         elif proposal.kind == "edit" and exec_result.status == "fail":
-            # Apply failed, go back to planning
+            # Apply failed - if too many attempts, go to diagnose
+            if attempts >= 2:
+                state.phase = Phase.DIAGNOSE
+            else:
+                state.phase = Phase.PLAN
+        elif attempts >= 2:
+            # Force progress even without edit
             state.phase = Phase.PLAN
     
     elif state.phase == Phase.TEST_STAGE:
-        if exec_result.status == "ok":
-            # Tests passed - check if we should minimize
-            test_result = exec_result.metrics.get("test_result", {})
-            if test_result.get("passed", False):
-                state.phase = Phase.MINIMIZE
-            else:
-                state.phase = Phase.DIAGNOSE
+        test_result = exec_result.metrics.get("test_result", {})
+        if test_result.get("passed", False):
+            state.phase = Phase.FINALIZE  # Skip minimize for speed
+            state.notes["solved"] = True
         else:
             state.phase = Phase.DIAGNOSE
     
@@ -278,16 +289,16 @@ def _advance_phase(
         state.phase = Phase.PLAN
     
     elif state.phase == Phase.MINIMIZE:
-        # After minimization, finalize
         state.phase = Phase.FINALIZE
     
     elif state.phase == Phase.FINALIZE:
         if proposal.kind == "finalize":
             state.phase = Phase.DONE
             state.notes["stop_reason"] = "finalized"
-        else:
-            # Need to finalize
-            pass
+        elif attempts >= 2:
+            # Force done if we've tried to finalize enough
+            state.phase = Phase.DONE
+            state.notes["stop_reason"] = "forced_finalize"
     
     return state
 

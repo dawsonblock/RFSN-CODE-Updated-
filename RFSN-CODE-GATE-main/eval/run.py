@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +30,76 @@ from memory.log import append_event
 from rfsn_controller.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def setup_repo(task: "SWEBenchTask", workdir: Path) -> bool:
+    """Clone and checkout repository for a SWE-bench task.
+    
+    Args:
+        task: The SWE-bench task containing repo and commit info
+        workdir: Directory to clone into
+        
+    Returns:
+        True if setup succeeded, False otherwise
+    """
+    repo_url = f"https://github.com/{task.repo}.git"
+    
+    # Clean up existing directory if it exists
+    if workdir.exists():
+        shutil.rmtree(workdir)
+    
+    workdir.mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Cloning {task.repo} to {workdir}")
+    
+    try:
+        # Clone with minimal history for speed
+        result = subprocess.run(
+            ["git", "clone", "--depth", "100", repo_url, str(workdir)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"Clone failed: {result.stderr}")
+            return False
+        
+        # Fetch the specific commit if not in shallow clone
+        subprocess.run(
+            ["git", "fetch", "--depth", "100", "origin", task.base_commit],
+            cwd=workdir,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        
+        # Checkout the base commit
+        result = subprocess.run(
+            ["git", "checkout", task.base_commit],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        
+        if result.returncode != 0:
+            logger.warning(f"Checkout specific commit failed: {result.stderr}")
+            # Try without specific commit - use HEAD
+            logger.info("Using HEAD instead of specific commit")
+        else:
+            logger.info(f"Checked out commit {task.base_commit[:8]}")
+        
+        return True
+        
+    except subprocess.TimeoutExpired:
+        logger.error("Repository setup timed out")
+        return False
+    except Exception as e:
+        logger.error(f"Repository setup failed: {e}")
+        return False
 
 
 @dataclass
@@ -178,16 +250,46 @@ class EvalRunner:
         logger.info(f"Starting task {task.task_id}")
         logger.info(f"Repo: {task.repo}, commit: {task.base_commit}")
         
+        # Setup repository - clone and checkout
+        workdir = self.config.work_dir / task.task_id
+        if not setup_repo(task, workdir):
+            return EvalResult(
+                task_id=task.task_id,
+                success=False,
+                resolution_time=time.time() - start_time,
+                steps_taken=0,
+                patches_tried=0,
+                tests_passed=0,
+                tests_failed=0,
+                error_message="Failed to setup repository",
+            )
+        
         # Initialize agent state
+        from agent.types import RepoFingerprint, BudgetState
+        
+        repo = RepoFingerprint(
+            repo_id=f"{task.repo}@{task.base_commit}",
+            commit_sha=task.base_commit,
+            workdir=str(workdir),
+            language="python",
+        )
+        
+        budget = BudgetState(
+            max_rounds=self.profile.max_rounds,
+            max_patch_attempts=self.profile.max_patch_attempts,
+            max_test_runs=self.profile.max_test_runs,
+            max_model_calls=self.profile.max_model_calls,
+        )
+        
         state = AgentState(
             task_id=task.task_id,
-            repo_url=f"https://github.com/{task.repo}",
-            repo_hash=task.base_commit,
+            repo=repo,
             phase=Phase.INGEST,
-            problem_statement=task.problem_statement,
-            test_patch=task.test_patch,
-            max_steps=self.config.max_steps_per_task,
-            max_time=self.config.max_time_per_task,
+            budget=budget,
+            notes={
+                "problem_statement": task.problem_statement,
+                "test_patch": task.test_patch,
+            },
         )
         
         # Log task start
@@ -199,8 +301,17 @@ class EvalRunner:
         })
         
         try:
+            # Import DeepSeek agent functions
+            from agent.deepseek_agent import propose, gate, execute
+            
             # Run agent episode (the inner loop)
-            final_state = await run_episode(state, self.profile)
+            final_state = run_episode(
+                profile=self.profile,
+                state=state,
+                propose_fn=propose,
+                gate_fn=gate,
+                exec_fn=execute,
+            )
             
             # Calculate metrics
             resolution_time = time.time() - start_time
@@ -211,14 +322,14 @@ class EvalRunner:
                 success=(final_state.phase == Phase.DONE and 
                         final_state.notes.get("solved", False)),
                 resolution_time=resolution_time,
-                steps_taken=final_state.step_count,
-                patches_tried=len(final_state.notes.get("patch_history", [])),
+                steps_taken=final_state.budget.round_idx,
+                patches_tried=final_state.budget.patch_attempts,
                 tests_passed=final_state.notes.get("tests_passed", 0),
                 tests_failed=final_state.notes.get("tests_failed", 0),
-                localization_hits=final_state.notes.get("localization_hits", []),
+                localization_hits=final_state.localization_hits,
                 patch_history=final_state.notes.get("patch_history", []),
                 test_history=final_state.notes.get("test_history", []),
-                llm_calls=final_state.notes.get("llm_calls", 0),
+                llm_calls=final_state.budget.model_calls,
                 llm_tokens=final_state.notes.get("llm_tokens", 0),
                 subprocess_calls=final_state.notes.get("subprocess_calls", 0),
             )
@@ -254,7 +365,7 @@ class EvalRunner:
                 task_id=task.task_id,
                 success=False,
                 resolution_time=resolution_time,
-                steps_taken=state.step_count,
+                steps_taken=state.budget.round_idx,
                 patches_tried=0,
                 tests_passed=0,
                 tests_failed=0,
@@ -332,7 +443,7 @@ class EvalRunner:
         
         summary_file = self.config.results_dir / f"{run_id}_summary.json"
         with open(summary_file, "w") as f:
-            json.dumps(summary, f, indent=2)
+            json.dump(summary, f, indent=2)
         
         logger.info(f"Saved results to {results_file}")
         logger.info(f"Success rate: {summary['successful_tasks']}/{summary['total_tasks']}")

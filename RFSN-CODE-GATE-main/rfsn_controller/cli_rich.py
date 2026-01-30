@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -213,23 +214,26 @@ def run_repair(
     print_config(config)
     
     # Simulate repair process
+    # Demo delay is configurable via RFSN_DEMO_DELAY env var (default: 0.5s)
+    demo_delay = float(os.getenv("RFSN_DEMO_DELAY", "0.5"))
+    
     with ProgressTracker("Initializing") as progress:
         progress.update(20, "Cloning repository")
         # Simulate work
         import time
-        time.sleep(0.5)
+        time.sleep(demo_delay)
         
         progress.update(20, "Running initial tests")
-        time.sleep(0.5)
+        time.sleep(demo_delay)
         
         progress.update(20, "Analyzing failures")
-        time.sleep(0.5)
+        time.sleep(demo_delay)
         
         progress.update(20, "Generating proposals")
-        time.sleep(0.5)
+        time.sleep(demo_delay)
         
         progress.update(20, "Applying fixes")
-        time.sleep(0.5)
+        time.sleep(demo_delay)
     
     # Print metrics
     metrics = {

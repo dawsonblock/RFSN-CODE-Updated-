@@ -21,7 +21,7 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 
-def append_event(state: AgentState, event: LedgerEvent) -> None:
+def append_event(state: AgentState, event: LedgerEvent | dict) -> None:
     """Append a ledger event to the log file.
     
     Events are written as JSONL (one JSON object per line).
@@ -29,11 +29,13 @@ def append_event(state: AgentState, event: LedgerEvent) -> None:
     
     Args:
         state: Current agent state
-        event: Event to log
+        event: Event to log (LedgerEvent or dict)
         
     Example:
         >>> event = LedgerEvent.now(...)
         >>> append_event(state, event)
+        >>> # Or with dict:
+        >>> append_event(state, {"event": "task_start", "task_id": "..."})
     """
     run_dir = state.notes.get("run_dir")
     if not run_dir:
@@ -46,24 +48,32 @@ def append_event(state: AgentState, event: LedgerEvent) -> None:
     
     try:
         with open(log_path, "a", encoding="utf-8") as f:
-            # Convert dataclass to dict
-            event_dict = {
-                "ts_unix": event.ts_unix,
-                "task_id": event.task_id,
-                "repo_id": event.repo_id,
-                "phase": event.phase.value if hasattr(event.phase, 'value') else str(event.phase),
-                "proposal_hash": event.proposal_hash,
-                "proposal": event.proposal,
-                "gate": event.gate,
-                "exec": event.exec,
-                "result": event.result,
-            }
+            # Handle both LedgerEvent and plain dict
+            if isinstance(event, dict):
+                # Simple dict event - just add timestamp
+                import time
+                event_dict = {"ts_unix": time.time(), **event}
+            else:
+                # Convert LedgerEvent dataclass to dict
+                event_dict = {
+                    "ts_unix": event.ts_unix,
+                    "task_id": event.task_id,
+                    "repo_id": event.repo_id,
+                    "phase": event.phase.value if hasattr(event.phase, 'value') else str(event.phase),
+                    "proposal_hash": event.proposal_hash,
+                    "proposal": event.proposal,
+                    "gate": event.gate,
+                    "exec": event.exec,
+                    "result": event.result,
+                }
             f.write(json.dumps(event_dict, ensure_ascii=False) + "\n")
         
-        logger.debug("Logged event", task_id=event.task_id, phase=event.phase)
+        task_id = event.get("task_id") if isinstance(event, dict) else event.task_id
+        logger.debug("Logged event", task_id=task_id)
         
     except Exception as e:
-        logger.error("Failed to log event", error=str(e), task_id=event.task_id)
+        task_id = event.get("task_id", "unknown") if isinstance(event, dict) else getattr(event, "task_id", "unknown")
+        logger.error("Failed to log event", error=str(e), task_id=task_id)
 
 
 def read_ledger(run_dir: str) -> list[LedgerEvent]:

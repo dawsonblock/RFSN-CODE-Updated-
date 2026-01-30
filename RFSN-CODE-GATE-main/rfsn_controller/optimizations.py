@@ -661,10 +661,13 @@ class ResourceLimits:
 
 def init_optimizations() -> None:
     """Initialize all optimization systems."""
+    # Cleanup interval configurable via env var (default: 30s)
+    cleanup_interval = int(os.getenv("RFSN_CACHE_CLEANUP_INTERVAL", "30"))
+    
     # Start subprocess pool cleanup thread
     def cleanup_loop():
         while True:
-            time.sleep(30)
+            time.sleep(cleanup_interval)
             try:
                 pool = get_subprocess_pool()
                 pool.cleanup()

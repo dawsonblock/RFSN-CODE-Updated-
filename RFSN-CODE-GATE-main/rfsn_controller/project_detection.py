@@ -1,14 +1,15 @@
 """Project type detection for automatic setup and testing.
-from __future__ import annotations
 
 Detects project type from repository structure and provides
 appropriate setup and test commands.
 """
 
+from __future__ import annotations
+
 import os
 import shlex
 from dataclasses import dataclass
-from typing import List, Optional
+from functools import lru_cache
 
 from .buildpacks import BuildpackContext, get_all_buildpacks
 
@@ -18,8 +19,8 @@ class ProjectType:
     """Detected project type with setup and test commands."""
 
     name: str
-    setup_commands: List[str]
-    test_commands: List[str]
+    setup_commands: list[str]
+    test_commands: list[str]
     language: str
 
 
@@ -31,7 +32,7 @@ class InstallResult:
     command: str
     output: str
     error: str
-    failure_reason: Optional[str] = None
+    failure_reason: str | None = None
 
 
 def classify_install_failure(stderr: str) -> str:
@@ -77,7 +78,8 @@ def classify_install_failure(stderr: str) -> str:
     return "unknown"
 
 
-def detect_project_type(repo_dir: str) -> Optional[ProjectType]:
+@lru_cache(maxsize=32)
+def detect_project_type(repo_dir: str) -> ProjectType | None:
     """Detect the project type from repository structure.
 
     Args:
@@ -142,7 +144,7 @@ def detect_project_type(repo_dir: str) -> Optional[ProjectType]:
     return None
 
 
-def get_default_test_command(repo_dir: str) -> Optional[str]:
+def get_default_test_command(repo_dir: str) -> str | None:
     """Get a default test command for the repository.
 
     Args:
@@ -157,7 +159,7 @@ def get_default_test_command(repo_dir: str) -> Optional[str]:
     return None
 
 
-def get_setup_commands(repo_dir: str) -> List[str]:
+def get_setup_commands(repo_dir: str) -> list[str]:
     """Get setup commands for the repository.
 
     Args:
