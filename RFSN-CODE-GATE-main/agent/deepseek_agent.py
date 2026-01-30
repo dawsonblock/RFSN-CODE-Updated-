@@ -103,10 +103,27 @@ def propose(profile: Profile, state: AgentState) -> Proposal:
     """Generate a proposal using DeepSeek R1."""
     prompt = _build_prompt(profile, state)
     
-    logger.debug("Calling DeepSeek R1", phase=state.phase.value, prompt_len=len(prompt))
+    # Temperature escalation: increase creativity when stuck
+    base_temp = 0.0
+    reject_count = state.notes.get("consecutive_rejects", 0)
+    phase_attempts = state.notes.get(f"phase_{state.phase.value}_attempts", 0)
+    
+    # Escalate temperature when struggling
+    if reject_count >= 2:
+        base_temp = 0.3  # More creative after multiple rejects
+    elif phase_attempts >= 3:
+        base_temp = 0.2  # Slightly more creative when stuck in phase
+    
+    logger.debug(
+        "Calling DeepSeek R1",
+        phase=state.phase.value, 
+        prompt_len=len(prompt),
+        temperature=base_temp,
+        reject_count=reject_count,
+    )
     
     try:
-        response = call_model(prompt, temperature=0.0)
+        response = call_model(prompt, temperature=base_temp)
     except Exception as e:
         logger.error("DeepSeek call failed", error=str(e))
         return _fallback_proposal(state, str(e))
@@ -207,6 +224,14 @@ def _build_prompt(profile: Profile, state: AgentState) -> str:
     # Last gate rejection
     if "last_gate_reject" in state.notes:
         parts.append(f"\n# ⛔ LAST REJECTION: {state.notes['last_gate_reject']}")
+    
+    # Force source edit guidance after multiple test file rejects
+    if state.notes.get("force_source_edit"):
+        parts.append("\n# 🚨 CRITICAL: Your last patches tried to edit TEST files!")
+        parts.append("You MUST edit SOURCE code files only. Look for:")
+        parts.append("- Files in src/, lib/, or the main package (not tests/)")
+        parts.append("- The file containing the bug, not the file testing it")
+        parts.append("- Implementation code with the broken logic")
     
     return "\n".join(parts)
 

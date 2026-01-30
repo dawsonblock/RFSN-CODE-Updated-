@@ -117,6 +117,10 @@ def run_episode(
                 kind=proposal.kind,
             )
             
+            # Track consecutive rejects
+            reject_count = state.notes.get("consecutive_rejects", 0) + 1
+            state.notes["consecutive_rejects"] = reject_count
+            
             # Log rejection
             ev = LedgerEvent.now(
                 task_id=state.task_id,
@@ -136,9 +140,17 @@ def run_episode(
                 "rationale": proposal.rationale,
             }
             
+            # After 2 rejects in PATCH_CANDIDATES, force specific guidance
+            if reject_count >= 2 and state.phase == Phase.PATCH_CANDIDATES:
+                state.notes["force_source_edit"] = True
+                logger.warning("Multiple rejects - forcing source edit guidance")
+            
             # Force re-planning
             state.phase = Phase.PLAN if state.phase != Phase.DIAGNOSE else Phase.DIAGNOSE
             continue
+        
+        # Reset reject counter on success
+        state.notes["consecutive_rejects"] = 0
         
         logger.info("Gate accepted proposal")
         
