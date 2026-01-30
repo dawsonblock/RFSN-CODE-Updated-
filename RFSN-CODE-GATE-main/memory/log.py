@@ -10,10 +10,15 @@ import json
 import os
 from pathlib import Path
 
-from ..agent.types import AgentState, LedgerEvent
-from ..rfsn_controller.structured_logging import get_logger
+from agent.types import AgentState, LedgerEvent
 
-logger = get_logger(__name__)
+# Try to import logger, fall back to basic logging if not available
+try:
+    from rfsn_controller.structured_logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 
 def append_event(state: AgentState, event: LedgerEvent) -> None:

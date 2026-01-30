@@ -9,10 +9,14 @@ import re
 from pathlib import Path
 from typing import List
 
-from .types import LocalizationHit
-from ..rfsn_controller.structured_logging import get_logger
+from localize.types import LocalizationHit
 
-logger = get_logger(__name__)
+try:
+    from rfsn_controller.structured_logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 
 def parse_python_traceback(traceback: str, repo_dir: Path) -> List[LocalizationHit]:

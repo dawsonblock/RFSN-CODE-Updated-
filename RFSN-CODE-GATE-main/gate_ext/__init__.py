@@ -13,15 +13,19 @@ from __future__ import annotations
 
 from typing import Callable
 
-from ..agent.types import AgentState, Proposal, GateDecision
-from ..agent.profiles import Profile
-from .policy_phase import check_phase
-from .policy_files import check_files
-from .policy_tests import check_tests
-from .policy_diff import check_diff
-from ..rfsn_controller.structured_logging import get_logger
+from agent.types import AgentState, Proposal, GateDecision
+from agent.profiles import Profile
+from gate_ext.policy_phase import check_phase
+from gate_ext.policy_files import check_files
+from gate_ext.policy_tests import check_tests
+from gate_ext.policy_diff import check_diff
 
-logger = get_logger(__name__)
+try:
+    from rfsn_controller.structured_logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 
 def gate_with_profile(

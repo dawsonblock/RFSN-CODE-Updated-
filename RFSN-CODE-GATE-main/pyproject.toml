@@ -95,7 +95,7 @@ packages = ["rfsn_controller"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --strict-markers -n auto --cov=rfsn_controller --cov=cgw_ssl_guard --cov-report=term-missing --cov-report=html"
+addopts = "-v --strict-markers"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests requiring network",
@@ -104,12 +104,15 @@ markers = [
     "scanner: marks tests for shell scanner",
     "asyncio: marks tests as async tests",
 ]
-asyncio_mode = "auto"
 filterwarnings = [
     "ignore:Using `@model_validator` with mode='after'.*:DeprecationWarning:google\\.genai\\.types",
     "ignore:(?s).*Python version 3\\.9 past its end of life.*:FutureWarning:google\\.auth(\\.|\\$)",
     "ignore:(?s).*Python version 3\\.9 past its end of life.*:FutureWarning:google\\.oauth2(\\.|\\$)",
 ]
+
+[tool.pytest_asyncio]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 120

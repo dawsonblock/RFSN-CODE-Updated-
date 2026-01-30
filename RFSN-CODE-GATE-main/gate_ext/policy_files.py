@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Tuple, Set
 
-from ..agent.types import AgentState, Proposal
-from ..agent.profiles import Profile
+from agent.types import AgentState, Proposal
+from agent.profiles import Profile
 
 
 # Patterns that trigger vendor detection

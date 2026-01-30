@@ -2,6 +2,7 @@
 
 import asyncio
 import pytest
+import pytest_asyncio
 import tempfile
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from rfsn_controller.async_multi_tier_cache import (
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def temp_db():
     """Create temporary database for testing."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -20,7 +21,7 @@ async def temp_db():
         yield db_path
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def cache(temp_db):
     """Create test cache instance."""
     cache = AsyncMultiTierCache(

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from ..agent.types import AgentState, Proposal, Phase
-from ..agent.profiles import Profile
+from agent.types import AgentState, Proposal, Phase
+from agent.profiles import Profile
 
 
 def check_tests(profile: Profile, state: AgentState, proposal: Proposal) -> Tuple[bool, str]:

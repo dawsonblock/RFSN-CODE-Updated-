@@ -18,8 +18,14 @@ import time
 
 from .types import AgentState, Proposal, GateDecision, ExecResult, LedgerEvent, Phase
 from .profiles import Profile
-from ..memory.log import append_event
-from ..rfsn_controller.structured_logging import get_logger
+from memory.log import append_event
+
+try:
+    from rfsn_controller.structured_logging import get_logger
+except ImportError:
+    import logging
+    def get_logger(name):
+        return logging.getLogger(name)
 
 logger = get_logger(__name__)
 
