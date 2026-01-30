@@ -585,11 +585,18 @@ def gate(profile: Profile, state: AgentState, proposal: Proposal) -> GateDecisio
     # 4. Check test modification constraint
     if profile.forbid_test_modifications and proposal.kind == "edit":
         files = proposal.inputs.get("files", [])
+        diff = proposal.inputs.get("diff", "")
+        
+        # Also extract files from diff if files list is empty
+        if not files and diff:
+            files = _extract_files_from_diff(diff)
+        
         for f in files:
-            if "test" in f.lower() or f.startswith("tests/"):
+            if "test" in f.lower() or f.startswith("tests/") or "test_" in f:
+                state.notes["last_gate_reject"] = f"Cannot edit test files: {f}"
                 return GateDecision(
                     accept=False,
-                    reason=f"Test modification forbidden by profile: {f}",
+                    reason=f"Test modification forbidden by profile: {f}. Edit source code instead.",
                 )
     
     return GateDecision(accept=True, reason="All constraints satisfied")
