@@ -99,7 +99,44 @@ def _ensure_openai_imported():
     return _openai
 
 
+# =============================================================================
+# MULTI-MODEL FALLBACK CONFIGURATION
+# =============================================================================
+# Primary model and fallbacks. Set RFSN_FALLBACK_MODELS to customize.
+# Format: comma-separated list of "model:base_url:api_key_env"
+# Example: RFSN_FALLBACK_MODELS="gpt-4o:https://api.openai.com/v1:OPENAI_API_KEY"
+
 MODEL = "deepseek-chat"
+
+# Fallback models (tried in order if primary fails)
+FALLBACK_MODELS = [
+    {
+        "model": "deepseek-chat",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+    },
+    # Add more fallbacks as needed - these are only used if env vars are set
+    {
+        "model": "gpt-4o",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+    },
+    {
+        "model": "claude-3-5-sonnet-20241022",
+        "base_url": "https://api.anthropic.com/v1",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    },
+]
+
+
+def _get_available_models() -> list[dict]:
+    """Get list of models with available API keys."""
+    available = []
+    for model_config in FALLBACK_MODELS:
+        api_key = os.environ.get(model_config["api_key_env"])
+        if api_key:
+            available.append({**model_config, "api_key": api_key})
+    return available
 
 SYSTEM = """
 You are RFSN-CODE, a controller-governed CODING AGENT operating inside a locked-down sandbox.
@@ -488,6 +525,80 @@ def call_model(model_input: str, temperature: float = 0.0) -> dict:
     # Should never reach here
     raise last_exception if last_exception else RuntimeError("Unknown error")
 
+
+def call_model_with_fallback(model_input: str, temperature: float = 0.0) -> dict:
+    """Call LLM with fallback to alternative models if primary fails.
+    
+    Tries each available model in order until one succeeds.
+    
+    Args:
+        model_input: The text prompt to send to the model.
+        temperature: Sampling temperature for creative variance.
+        
+    Returns:
+        A dictionary parsed from the JSON response.
+        
+    Raises:
+        RuntimeError: If all models fail.
+    """
+    import time
+    
+    _ensure_openai_imported()
+    OpenAI, _ = _openai
+    
+    available_models = _get_available_models()
+    if not available_models:
+        raise RuntimeError("No LLM API keys configured. Set DEEPSEEK_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY.")
+    
+    errors = []
+    
+    for model_config in available_models:
+        model_name = model_config["model"]
+        base_url = model_config["base_url"]
+        api_key = model_config["api_key"]
+        
+        # Skip Anthropic for now (different API format)
+        if "anthropic" in base_url.lower():
+            continue
+        
+        try:
+            temp_client = OpenAI(api_key=api_key, base_url=base_url)
+            
+            start_time = time.time()
+            resp = temp_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": model_input},
+                ],
+                temperature=temperature,
+                response_format={"type": "json_object"},
+            )
+            
+            content = resp.choices[0].message.content
+            result = json.loads(content)
+            
+            latency_sec = time.time() - start_time
+            
+            # Log success with fallback model
+            try:
+                from ..telemetry import track_llm_call
+                track_llm_call(
+                    model=model_name,
+                    status="success",
+                    latency_sec=latency_sec,
+                )
+            except ImportError:
+                pass
+            
+            return result
+            
+        except Exception as e:
+            errors.append(f"{model_name}: {e}")
+            continue
+    
+    # All models failed
+    raise RuntimeError(f"All LLM models failed: {'; '.join(errors)}")
 
 async def call_model_async(model_input: str, temperature: float = 0.0) -> dict:
     """Async version of call_model."""

@@ -178,6 +178,19 @@ def run_episode(
             state.budget.patch_attempts += 1
             files = proposal.inputs.get("files", [])
             state.touched_files = sorted(set(state.touched_files) | set(files))
+            
+            # Record outcome for learning
+            diff = proposal.inputs.get("diff", "")
+            if diff and profile.enable_outcome_learning:
+                try:
+                    from agent.outcome_learning import record_patch_outcome
+                    record_patch_outcome(
+                        patch_diff=diff,
+                        success=exec_result.status == "ok",
+                        task_id=state.task_id,
+                    )
+                except Exception as e:
+                    logger.debug("Outcome learning disabled", reason=str(e))
         
         if proposal.kind in ["inspect", "search", "edit", "run_tests"]:
             state.budget.model_calls += 1

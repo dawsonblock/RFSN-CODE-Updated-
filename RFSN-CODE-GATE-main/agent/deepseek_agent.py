@@ -233,6 +233,27 @@ def _build_prompt(profile: Profile, state: AgentState) -> str:
         parts.append("- The file containing the bug, not the file testing it")
         parts.append("- Implementation code with the broken logic")
     
+    # Outcome learning hints - show similar past patches
+    if "last_diff" in state.notes:
+        try:
+            from agent.outcome_learning import predict_patch_success, get_outcome_learner
+            last_diff = state.notes["last_diff"]
+            pred = predict_patch_success(last_diff)
+            if pred < 0.3:
+                parts.append("\n# ⚠️ WARNING: Similar patches have low success rates")
+                parts.append("Consider a different approach to this fix.")
+            
+            # Show similar patches if available
+            learner = get_outcome_learner()
+            similar = learner.get_similar_patches(last_diff, limit=2)
+            if similar:
+                parts.append("\n# 📊 SIMILAR PAST PATCHES:")
+                for patch in similar:
+                    status = "✅ SUCCESS" if patch["success"] else "❌ FAILED"
+                    parts.append(f"- {status}: {patch['patterns'][:3]}")
+        except Exception:
+            pass  # Outcome learning not available
+    
     return "\n".join(parts)
 
 
