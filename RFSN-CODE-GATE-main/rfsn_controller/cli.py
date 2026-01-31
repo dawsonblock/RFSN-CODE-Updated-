@@ -397,6 +397,36 @@ def main() -> None:
         action="store_true",
         help="Enable verbose logging",
     )
+    # Beam Search options
+    parser.add_argument(
+        "--beam-search",
+        action="store_true",
+        help="Enable multi-step beam search over patch space",
+    )
+    parser.add_argument(
+        "--beam-width",
+        type=int,
+        default=3,
+        help="Number of candidates to keep per beam search step (default: 3)",
+    )
+    parser.add_argument(
+        "--beam-depth",
+        type=int,
+        default=5,
+        help="Maximum beam search expansion depth (default: 5)",
+    )
+    parser.add_argument(
+        "--beam-score-threshold",
+        type=float,
+        default=0.95,
+        help="Score threshold for early termination in beam search (default: 0.95)",
+    )
+    parser.add_argument(
+        "--beam-timeout",
+        type=float,
+        default=300.0,
+        help="Timeout in seconds for beam search (default: 300)",
+    )
     args = parser.parse_args()
 
     # Handle CGW mode
@@ -468,6 +498,11 @@ def main() -> None:
         state_dir=args.state_dir,
         durability_reruns=args.durability_reruns,
         no_eval=args.no_eval,
+        beam_search_enabled=args.beam_search,
+        beam_width=args.beam_width,
+        beam_depth=args.beam_depth,
+        beam_score_threshold=args.beam_score_threshold,
+        beam_timeout_seconds=args.beam_timeout,
     )
     result = run_controller(cfg)
     print(result)
