@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rfsn-controller"
-version = "0.3.0"
+version = "1.4.3"
 description = "RFSN Sandbox Controller - Intelligent Autonomous Code Agent"
 readme = "README.md"
 requires-python = ">=3.12"
